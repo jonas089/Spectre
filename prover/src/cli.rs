@@ -83,11 +83,10 @@ where
             let gen_dummy_snark = |k: u32| {
                 let params = gen_srs(k);
 
-                let pk = CommitteeUpdateCircuit::<S, Fr>::read_or_create_pk(
+                let pk = CommitteeUpdateCircuit::<S, Fr>::create_pk(
                     &params,
                     &pk_path,
                     &cfg_path,
-                    true,
                     &Default::default(),
                 );
 
@@ -157,11 +156,10 @@ where
             let gen_dummy_snark = |k: u32| {
                 let params = gen_srs(k);
 
-                let pk = StepCircuit::<S, Fr>::read_or_create_pk(
+                let pk = StepCircuit::<S, Fr>::create_pk(
                     &params,
                     &pk_path,
                     &cfg_path,
-                    true,
                     &Default::default(),
                 );
 
