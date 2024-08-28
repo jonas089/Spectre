@@ -1,18 +1,29 @@
+// The Licensed Work is (c) 2023 ChainSafe
+// Code: https://github.com/ChainSafe/Spectre
+// SPDX-License-Identifier: LGPL-3.0-only
+
 use eth_types::Spec;
 use ethereum_consensus_types::signing::compute_signing_root;
 use ethereum_consensus_types::BeaconBlockHeader;
+use ff::Field;
 use halo2curves::bls12_381::hash_to_curve::ExpandMsgXmd;
 use halo2curves::bls12_381::{hash_to_curve, Fr, G1, G2};
 use halo2curves::group::Curve;
 use itertools::Itertools;
+use rand::SeedableRng;
 use serde::{Deserialize, Serialize};
 use ssz_rs::{Merkleized, Node};
-use std::iter;
 use std::marker::PhantomData;
 use std::ops::Deref;
 
 use super::mock_root;
 
+/// Input datum for the `StepCircuit` to verify `attested_header` singed by the lightclient sync committee,
+/// and the `execution_payload_root` via Merkle `finality_branch` against the `finalized_header` root.
+///
+/// Assumes that aggregated BLS signarure is represented as a compressed G2 point and the public keys are uncompressed G1 points;
+/// `pariticipation_bits` vector has exactly `S::SYNC_COMMITTEE_SIZE`` bits;
+/// `finality_branch` and `execution_payload_branch` are exactly `S::FINALIZED_HEADER_DEPTH` and `S::EXECUTION_STATE_ROOT_DEPTH` long respectively.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncStepArgs<S: Spec> {
     pub signature_compressed: Vec<u8>,
@@ -37,6 +48,7 @@ pub struct SyncStepArgs<S: Spec> {
     pub _spec: PhantomData<S>,
 }
 
+// This default witness is intended for circuit setup and testing purposes only.
 impl<S: Spec> Default for SyncStepArgs<S> {
     fn default() -> Self {
         const DOMAIN: [u8; 32] = [
@@ -75,30 +87,38 @@ impl<S: Spec> Default for SyncStepArgs<S> {
         let signing_root =
             compute_signing_root(attested_header.hash_tree_root().unwrap(), DOMAIN).unwrap();
 
-        let sk = Fr::from_bytes(&[1; 32]).unwrap();
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(0);
+
+        let sks = (0..S::SYNC_COMMITTEE_SIZE)
+            .map(|_| Fr::random(&mut rng))
+            .collect_vec();
         let msg = <G2 as hash_to_curve::HashToCurve<ExpandMsgXmd<sha2::Sha256>>>::hash_to_curve(
             signing_root.deref(),
             S::DST,
         )
         .to_affine();
 
-        let aggregated_signature = vec![msg * sk; S::SYNC_COMMITTEE_SIZE]
-            .into_iter()
+        let aggregated_signature = sks
+            .iter()
+            .map(|sk| msg * sk)
             .fold(G2::identity(), |acc, x| acc + x)
             .to_affine();
 
         let signature_compressed = aggregated_signature.to_compressed_be().to_vec();
 
-        let pubkey_uncompressed = (G1::generator() * sk)
-            .to_affine()
-            .to_uncompressed_be()
-            .to_vec();
+        let pubkeys_uncompressed = sks
+            .iter()
+            .map(|sk| {
+                (G1::generator() * sk)
+                    .to_affine()
+                    .to_uncompressed_be()
+                    .to_vec()
+            })
+            .collect_vec();
 
         Self {
             signature_compressed,
-            pubkeys_uncompressed: iter::repeat(pubkey_uncompressed)
-                .take(S::SYNC_COMMITTEE_SIZE)
-                .collect_vec(),
+            pubkeys_uncompressed,
             pariticipation_bits: vec![true; S::SYNC_COMMITTEE_SIZE],
             domain: DOMAIN,
             attested_header,
@@ -117,8 +137,12 @@ mod tests {
     use crate::{sync_step_circuit::StepCircuit, util::AppCircuit};
     use eth_types::Testnet;
     use halo2_base::{
-        gates::circuit::CircuitBuilderStage, halo2_proofs::dev::MockProver,
+        gates::circuit::CircuitBuilderStage,
         halo2_proofs::halo2curves::bn256::Fr,
+        halo2_proofs::{
+            dev::MockProver, halo2curves::bn256::Bn256, poly::kzg::commitment::ParamsKZG,
+        },
+        utils::fs::gen_srs,
     };
     use snark_verifier_sdk::CircuitExt;
 
@@ -126,16 +150,17 @@ mod tests {
     fn test_step_default_witness() {
         const K: u32 = 20;
         let witness = SyncStepArgs::<Testnet>::default();
+        let params: ParamsKZG<Bn256> = gen_srs(K);
 
         let circuit = StepCircuit::<Testnet, Fr>::create_circuit(
             CircuitBuilderStage::Mock,
             None,
             &witness,
-            K,
+            &params,
         )
         .unwrap();
 
         let prover = MockProver::<Fr>::run(K, &circuit, circuit.instances()).unwrap();
-        prover.assert_satisfied_par();
+        prover.assert_satisfied();
     }
 }

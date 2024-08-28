@@ -168,7 +168,7 @@ mod tests {
     use lightclient_circuits::{
         halo2_base::gates::circuit::CircuitBuilderStage,
         sync_step_circuit::StepCircuit,
-        util::{gen_srs, AppCircuit, Eth2ConfigPinning, Halo2ConfigPinning},
+        util::{gen_srs, AppCircuit},
     };
     use snark_verifier_sdk::CircuitExt;
 
@@ -178,16 +178,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_sync_circuit_sepolia() {
-        const CONFIG_PATH: &str = "../lightclient-circuits/config/sync_step.json";
         const K: u32 = 21;
-        let client = MainnetClient::new(Url::parse("http://65.109.55.120:9596").unwrap());
+        let client = MainnetClient::new(Url::parse("https://lodestar-sepolia.chainsafe.io").unwrap());
 
         let witness = fetch_step_args::<Testnet, _>(&client).await.unwrap();
-        let pinning = Eth2ConfigPinning::from_path(CONFIG_PATH);
 
         let circuit = StepCircuit::<Testnet, Fr>::create_circuit(
             CircuitBuilderStage::Mock,
-            Some(pinning),
+            None,
             &witness,
             K,
         )
@@ -199,18 +197,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_sync_step_snark_sepolia() {
-        const CONFIG_PATH: &str = "../lightclient-circuits/config/sync_step_21.json";
+        const CONFIG_PATH: &str = "../lightclient-circuits/config/sync_step_testnet.json";
         const K: u32 = 21;
         let params = gen_srs(K);
 
         let pk = StepCircuit::<Testnet, Fr>::read_or_create_pk(
             &params,
-            "../build/sync_step_21.pkey",
+            "../build/sync_step_testnet.pkey",
             CONFIG_PATH,
             false,
             &SyncStepArgs::<Testnet>::default(),
         );
-        let client = MainnetClient::new(Url::parse("http://65.109.55.120:9596").unwrap());
+        let client = MainnetClient::new(Url::parse("https://lodestar-sepolia.chainsafe.io").unwrap());
         let witness = fetch_step_args::<Testnet, _>(&client).await.unwrap();
 
         StepCircuit::<Testnet, Fr>::gen_snark_shplonk(

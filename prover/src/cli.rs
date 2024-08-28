@@ -1,20 +1,21 @@
+// The Licensed Work is (c) 2023 ChainSafe
+// Code: https://github.com/ChainSafe/Spectre
+// SPDX-License-Identifier: LGPL-3.0-only
+
 use crate::args::BaseArgs;
 use crate::args::{OperationCmd, ProofCmd};
 use ark_std::{end_timer, start_timer};
+use lightclient_circuits::aggregation_circuit::AggregationConfigPinning;
+use lightclient_circuits::halo2_base::utils::fs::gen_srs;
 use lightclient_circuits::{
     committee_update_circuit::CommitteeUpdateCircuit,
     halo2_proofs::halo2curves::bn256::{Bn256, Fr},
     sync_step_circuit::StepCircuit,
-    util::{gen_srs, AppCircuit},
-};
-use lightclient_circuits::{
-    halo2_base::gates::circuit::CircuitBuilderStage, halo2_proofs::poly::commitment::Params,
+    util::AppCircuit,
 };
 use snark_verifier::loader::halo2::halo2_ecc::halo2_base::halo2_proofs::poly::kzg::commitment::ParamsKZG;
 use snark_verifier_sdk::halo2::aggregation::AggregationCircuit;
-use snark_verifier_sdk::CircuitExt;
-use std::path::PathBuf;
-use std::{fs::File, io::Write, path::Path};
+use std::path::{Path, PathBuf};
 
 #[cfg(feature = "experimental")]
 use halo2_solidity_verifier_new::{
@@ -51,6 +52,7 @@ where
                         &pk_path,
                         cfg_path,
                         &Default::default(),
+                        None,
                     );
 
                     Ok(())
@@ -77,6 +79,7 @@ where
             verifier_k,
             verifier_pk_path,
             pk_path,
+            verifier_lookup_bits,
         } => {
             let cfg_path = get_config_path(&pk_path, &base_args.config_dir);
 
@@ -88,13 +91,14 @@ where
                     &pk_path,
                     &cfg_path,
                     &Default::default(),
+                    None,
                 );
 
                 CommitteeUpdateCircuit::<S, Fr>::gen_snark_shplonk(
                     &params,
                     &pk,
                     &cfg_path,
-                    None::<String>,
+                    Some("./build/committee_update_dummy.snark"),
                     &Default::default(),
                 )
                 .map_err(|e| eyre::eyre!("Failed to generate proof: {}", e))
@@ -115,6 +119,9 @@ where
                         &verifier_pk_path,
                         verifier_cfg_path,
                         &vec![dummy_snark],
+                        verifier_lookup_bits.map(|lookup_bits| {
+                            AggregationConfigPinning::new(verifier_k, lookup_bits)
+                        }),
                     );
 
                     Ok(())
@@ -150,6 +157,7 @@ where
             pk_path,
             verifier_k,
             verifier_pk_path,
+            verifier_lookup_bits,
         } => {
             let cfg_path = get_config_path(&pk_path, &base_args.config_dir);
 
@@ -161,13 +169,14 @@ where
                     &pk_path,
                     &cfg_path,
                     &Default::default(),
+                    None,
                 );
 
                 StepCircuit::<S, Fr>::gen_snark_shplonk(
                     &params,
                     &pk,
                     &cfg_path,
-                    None::<String>,
+                    Some("./build/step_dummy.snark"),
                     &Default::default(),
                 )
                 .map_err(|e| eyre::eyre!("Failed to generate proof: {}", e))
@@ -188,6 +197,9 @@ where
                         &verifier_pk_path,
                         verifier_cfg_path,
                         &vec![dummy_snark],
+                        verifier_lookup_bits.map(|lookup_bits| {
+                            AggregationConfigPinning::new(verifier_k, lookup_bits)
+                        }),
                     );
 
                     Ok(())
@@ -233,35 +245,16 @@ fn gen_evm_verifier<Circuit: AppCircuit>(
     params: &ParamsKZG<Bn256>,
     pk_path: &Path,
     cfg_path: &Path,
-    mut path_out: PathBuf,
+    path_out: PathBuf,
     estimate_gas: bool,
     default_witness: Circuit::Witness,
 ) -> eyre::Result<()> {
-    let pk = Circuit::read_pk(params, pk_path, &default_witness);
+    let pk = Circuit::read_pk(params, pk_path, cfg_path, &default_witness);
 
-    let num_instances = {
-        let circuit = Circuit::create_circuit(
-            CircuitBuilderStage::Keygen,
-            None,
-            &default_witness,
-            params.k(),
-        )
-        .unwrap();
-        circuit.num_instance().first().map_or(0, |x| *x as u32)
-    };
-
-    path_out.set_extension("yul");
     let deplyment_code =
         Circuit::gen_evm_verifier_shplonk(params, &pk, Some(path_out.clone()), &default_witness)
             .map_err(|e| eyre::eyre!("Failed to EVM verifier: {}", e))?;
-    println!("yul size: {}", deplyment_code.len());
-
-    let sol_contract = halo2_solidity_verifier::fix_verifier_sol(path_out.clone(), num_instances)
-        .map_err(|e| eyre::eyre!("Failed to generate Solidity verifier: {}", e))?;
-    path_out.set_extension("sol");
-    let mut f = File::create(path_out).unwrap();
-    f.write(sol_contract.as_bytes())
-        .map_err(|e| eyre::eyre!("Failed to write Solidity verifier: {}", e))?;
+    println!("sol size: {}", deplyment_code.len());
 
     if estimate_gas {
         let _ = Circuit::gen_evm_proof_shplonk(

@@ -1,4 +1,7 @@
-use std::env::{set_var, var};
+// The Licensed Work is (c) 2023 ChainSafe
+// Code: https://github.com/ChainSafe/Spectre
+// SPDX-License-Identifier: LGPL-3.0-only
+
 use std::fs;
 use std::{fs::File, path::Path};
 
@@ -9,7 +12,6 @@ use halo2_base::halo2_proofs::{
     halo2curves::bn256::{Bn256, Fr, G1Affine},
     plonk::ProvingKey,
     plonk::{Circuit, Error, VerifyingKey},
-    poly::commitment::Params,
     poly::kzg::commitment::ParamsKZG,
 };
 use serde::{Deserialize, Serialize};
@@ -20,18 +22,33 @@ use snark_verifier_sdk::halo2::gen_proof_shplonk;
 use snark_verifier_sdk::{gen_pk, halo2::gen_snark_shplonk, read_pk};
 use snark_verifier_sdk::{CircuitExt, Snark};
 
-pub trait Halo2ConfigPinning: Serialize {
+/// Halo2 circuit configuration parameters.
+pub trait Halo2ConfigPinning: Serialize + Sized + for<'de> Deserialize<'de> {
+    type CircuitParams;
+
     type BreakPoints;
-    /// Loads configuration parameters from a file and sets environmental variables.
-    fn from_path<P: AsRef<Path>>(path: P) -> Self;
-    /// Loads configuration parameters into environment variables.
-    fn set_var(&self);
+
+    fn new(params: Self::CircuitParams, break_points: Self::BreakPoints) -> Self;
     /// Returns break points
     fn break_points(self) -> Self::BreakPoints;
-    /// Constructs `Self` from environmental variables and break points
-    fn from_var(break_points: Self::BreakPoints) -> Self;
+
     /// Degree of the circuit, log_2(number of rows)
     fn degree(&self) -> u32;
+
+    /// Loads configuration parameters from a file and sets environmental variables.
+    fn from_path<P: AsRef<Path>>(path: P) -> Self {
+        serde_json::from_reader(
+            File::open(&path)
+                .unwrap_or_else(|e| panic!("{:?} does not exist: {e:?}", path.as_ref())),
+        )
+        .unwrap()
+    }
+
+    /// Writes to file
+    fn write<P: AsRef<Path>>(&self, path: P) {
+        serde_json::to_writer_pretty(File::create(path).unwrap(), self)
+            .expect("failed to serialize to file");
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -41,54 +58,29 @@ pub struct Eth2ConfigPinning {
 }
 
 impl Halo2ConfigPinning for Eth2ConfigPinning {
+    type CircuitParams = BaseCircuitParams;
     type BreakPoints = MultiPhaseThreadBreakPoints;
 
-    fn from_path<P: AsRef<Path>>(path: P) -> Self {
-        let pinning: Self = serde_json::from_reader(
-            File::open(&path)
-                .unwrap_or_else(|e| panic!("{:?} does not exist: {e:?}", path.as_ref())),
-        )
-        .unwrap();
-        pinning.set_var();
-        pinning
-    }
-
-    fn set_var(&self) {
-        set_var(
-            "GATE_CONFIG_PARAMS",
-            serde_json::to_string(&self.params).unwrap(),
-        );
-        set_var("LOOKUP_BITS", (self.params.k - 1).to_string());
-    }
-
-    fn break_points(self) -> MultiPhaseThreadBreakPoints {
-        self.break_points
-    }
-
-    fn from_var(break_points: MultiPhaseThreadBreakPoints) -> Self {
-        let params: BaseCircuitParams =
-            serde_json::from_str(&var("GATE_CONFIG_PARAMS").unwrap()).unwrap();
+    fn new(params: Self::CircuitParams, break_points: Self::BreakPoints) -> Self {
         Self {
             params,
             break_points,
         }
     }
 
+    fn break_points(self) -> MultiPhaseThreadBreakPoints {
+        self.break_points
+    }
+
     fn degree(&self) -> u32 {
-        self.params.k as u32
+        u32::try_from(self.params.k).expect("k is too large for u32")
     }
 }
 
 pub trait PinnableCircuit<F: Field>: CircuitExt<F> {
     type Pinning: Halo2ConfigPinning;
 
-    fn break_points(&self) -> <Self::Pinning as Halo2ConfigPinning>::BreakPoints;
-
-    fn write_pinning(&self, path: impl AsRef<Path>) {
-        let break_points = self.break_points();
-        let pinning: Self::Pinning = Halo2ConfigPinning::from_var(break_points);
-        serde_json::to_writer_pretty(File::create(path).unwrap(), &pinning).unwrap();
-    }
+    fn pinning(&self) -> Self::Pinning;
 }
 
 pub trait AppCircuit {
@@ -103,8 +95,8 @@ pub trait AppCircuit {
     fn create_circuit(
         stage: CircuitBuilderStage,
         pinning: Option<Self::Pinning>,
-        witness_args: &Self::Witness,
-        k: u32,
+        witness: &Self::Witness,
+        params: &ParamsKZG<Bn256>,
     ) -> Result<impl crate::util::PinnableCircuit<Fr>, Error>;
 
     /// Reads the proving key for the pre-circuit.
@@ -112,10 +104,12 @@ pub trait AppCircuit {
     fn read_pk(
         params: &ParamsKZG<Bn256>,
         path: impl AsRef<Path>,
-        witness_args: &Self::Witness,
+        pinning_path: impl AsRef<Path>,
+        witness: &Self::Witness,
     ) -> ProvingKey<G1Affine> {
+        let pinning = Self::Pinning::from_path(pinning_path);
         let circuit =
-            Self::create_circuit(CircuitBuilderStage::Keygen, None, witness_args, params.k())
+            Self::create_circuit(CircuitBuilderStage::Keygen, Some(pinning), witness, params)
                 .unwrap();
         custom_read_pk(path, &circuit)
     }
@@ -127,16 +121,17 @@ pub trait AppCircuit {
         pk_path: impl AsRef<Path>,
         pinning_path: impl AsRef<Path>,
         witness_args: &Self::Witness,
+        pinning: Option<Self::Pinning>,
     ) -> ProvingKey<G1Affine> {
         let circuit =
-            Self::create_circuit(CircuitBuilderStage::Keygen, None, witness_args, params.k())
+            Self::create_circuit(CircuitBuilderStage::Keygen, pinning, witness_args, params)
                 .unwrap();
 
         let pk_exists = pk_path.as_ref().exists();
         let pk = gen_pk(params, &circuit, Some(pk_path.as_ref()));
         if !pk_exists {
             // should only write pinning data if we created a new pkey
-            circuit.write_pinning(pinning_path);
+            circuit.pinning().write(pinning_path);
         }
         pk
     }
@@ -144,20 +139,6 @@ pub trait AppCircuit {
     fn get_degree(pinning_path: impl AsRef<Path>) -> u32 {
         let pinning = Self::Pinning::from_path(pinning_path);
         pinning.degree()
-    }
-
-    fn read_or_create_pk(
-        params: &ParamsKZG<Bn256>,
-        pk_path: impl AsRef<Path>,
-        pinning_path: impl AsRef<Path>,
-        read_only: bool,
-        witness_args: &Self::Witness,
-    ) -> ProvingKey<G1Affine> {
-        if read_only {
-            Self::read_pk(params, pk_path, witness_args)
-        } else {
-            Self::create_pk(params, pk_path, pinning_path, witness_args)
-        }
     }
 
     fn gen_proof_shplonk(
@@ -171,7 +152,7 @@ pub trait AppCircuit {
             CircuitBuilderStage::Prover,
             Some(pinning),
             witness_args,
-            params.k(),
+            params,
         )?;
         let instances = circuit.instances();
         let proof = gen_proof_shplonk(params, pk, circuit, instances, None);
@@ -191,7 +172,7 @@ pub trait AppCircuit {
             CircuitBuilderStage::Prover,
             Some(pinning),
             witness_args,
-            params.k(),
+            params,
         )?;
         let snark = gen_snark_shplonk(params, pk, circuit, path);
 
@@ -205,7 +186,7 @@ pub trait AppCircuit {
         witness_args: &Self::Witness,
     ) -> Result<Vec<u8>, Error> {
         let circuit =
-            Self::create_circuit(CircuitBuilderStage::Keygen, None, witness_args, params.k())?;
+            Self::create_circuit(CircuitBuilderStage::Keygen, None, witness_args, params)?;
         let deployment_code =
             custom_gen_evm_verifier_shplonk(params, pk.get_vk(), &circuit, yul_path);
 
@@ -224,7 +205,7 @@ pub trait AppCircuit {
             CircuitBuilderStage::Prover,
             Some(pinning),
             witness_args,
-            params.k(),
+            params,
         )?;
         let instances = circuit.instances();
         let proof = gen_evm_proof_shplonk(params, pk, circuit, instances.clone());
@@ -249,7 +230,7 @@ pub trait AppCircuit {
             CircuitBuilderStage::Prover,
             Some(pinning),
             witness_args,
-            params.k(),
+            params,
         )?;
         let calldata = write_calldata_generic(params, pk, circuit, path, deployment_code);
 

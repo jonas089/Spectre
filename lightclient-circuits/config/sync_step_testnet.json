@@ -2,7 +2,7 @@
   "params": {
     "k": 21,
     "num_advice_per_phase": [
-      6
+      8
     ],
     "num_fixed": 1,
     "num_lookup_advice_per_phase": [
@@ -16,9 +16,11 @@
   "break_points": [
     [
       2097142,
-      2097142,
       2097140,
-      2097142,
+      2097140,
+      2097140,
+      2097140,
+      2097140,
       2097142
     ]
   ]

@@ -4,7 +4,7 @@ members = [
     "prover",
     "preprocessor",
     "eth-types",
-    "contract-tests",
+    # "contract-tests",
     "test-utils",
     "contracts",
 ]
@@ -41,32 +41,33 @@ preprocessor = { path = "preprocessor" }
 
 
 # halo2
-halo2-base = { git = "https://github.com/axiom-crypto/halo2-lib", branch = "community-edition", default-features = false, features = [
+halo2-base = { git = "https://github.com/axiom-crypto/halo2-lib", tag = "v0.4.1", default-features = false, features = [
     "halo2-pse",
     "display",
     "jemallocator",
 ] }
-halo2-ecc = { git = "https://github.com/axiom-crypto/halo2-lib", branch = "community-edition", default-features = false }
-zkevm-hashes = { git = "https://github.com/axiom-crypto/halo2-lib", branch = "community-edition", default-features = false }
+halo2-ecc = { git = "https://github.com/axiom-crypto/halo2-lib", tag = "v0.4.1", default-features = false }
+zkevm-hashes = { git = "https://github.com/axiom-crypto/halo2-lib", tag = "v0.4.1", default-features = false }
 
-halo2curves = { package = "halo2curves-axiom", version = "0.4.2" }
+halo2curves = { package = "halo2curves-axiom", version = "=0.5.2" }
 
 # verifier SDK
-snark-verifier = { git = "https://github.com/axiom-crypto/snark-verifier.git", branch = "community-edition", default-features = false, features = [
+snark-verifier = { git = "https://github.com/axiom-crypto/snark-verifier.git", tag = "v0.1.7-git", default-features = false, features = [
     "display",
     "loader_halo2",
     "loader_evm",
     "halo2-pse",
 ] }
-snark-verifier-sdk = { git = "https://github.com/axiom-crypto/snark-verifier.git", branch = "community-edition", default-features = false, features = [
+snark-verifier-sdk = { git = "https://github.com/axiom-crypto/snark-verifier.git", tag = "v0.1.7-git", default-features = false, features = [
     "display",
     "loader_halo2",
     "loader_evm",
     "halo2-pse",
+    "revm",
 ] }
 
 # ethereum types
-ethereum-consensus-types = { git = "https://github.com/ChainSafe/ethereum-consensus-types", branch = "capella" }
+ethereum-consensus-types = { git = "https://github.com/ChainSafe/ethereum-consensus-types", branch = "deneb" }
 beacon-api-client = { git = "https://github.com/ralexstokes/ethereum-consensus.git", rev = "f3bff52e9c43866f231ec40c8ab0e34125a8957f" }
 ssz_rs = "0.9"
 
@@ -75,46 +76,26 @@ group = "0.13"
 num-bigint = { version = "0.4", features = ["rand"] }
 pasta_curves = "0.5.1"
 ff = "0.13"
-sha2 = { version = "0.9", features = ["compress"] }
+sha2 = { version = "0.10", features = ["compress"] }
 uint = "0.9.1"
-ark-std = { version = "0.4.0", features = ["print-trace"] }
 
 # misc
 itertools = "0.12.0"
 serde = { version = "1.0.130", features = ["derive"] }
 serde_json = "1.0.78"
+getset = "0.1.2"
 log = "0.4.14"
 hex = "0.4"
+ark-std = { version = "0.4.0", features = ["print-trace"] }
+
 
 [patch.crates-io]
-halo2curves = { git = "https://github.com/timoftime/halo2curves", package = "halo2curves-axiom", rev = "1bd39b8" }
 ssz_rs = { git = "https://github.com/ralexstokes/ssz-rs", rev = "5f1ec833718efa07bbbff427ab28a1eeaa706164" }
-
+halo2-base = { git = "https://github.com/nulltea/halo2-lib", branch = "feat/bls12-381-hash2curve" }
+halo2-ecc = { git = "https://github.com/nulltea/halo2-lib", branch = "feat/bls12-381-hash2curve" }
+zkevm-hashes = { git = "https://github.com/nulltea/halo2-lib", branch = "feat/bls12-381-hash2curve" }
 
 [patch."https://github.com/axiom-crypto/halo2-lib"]
-halo2-base = { git = "https://github.com/timoftime/halo2-lib", branch = "feat/zkevm-sha256-builder", default-features = false, features = [
-    "halo2-pse",
-    "display",
-    "jemallocator",
-] }
-halo2-ecc = { git = "https://github.com/timoftime/halo2-lib", branch = "feat/zkevm-sha256-builder", default-features = false, features = [
-    "halo2-pse",
-    "jemallocator",
-] }
-zkevm-hashes = { git = "https://github.com/timoftime/halo2-lib", branch = "feat/zkevm-sha256-builder", default-features = false }
-# halo2-base = { path = "../halo2-lib/halo2-base", default-features = false, features = [
-#     "halo2-pse",
-#     "display",
-# ] }
-# halo2-ecc = { path = "../halo2-lib/halo2-ecc", default-features = false, features = [
-#     "halo2-pse",
-# ] }
-# zkevm-hashes = { path = "../halo2-lib/hashes/zkevm", default-features = false }
-
-
-[patch."https://github.com/axiom-crypto/snark-verifier.git"]
-snark-verifier = { git = "https://github.com/timoftime/snark-verifier", branch = "yul-codegen", default-features = false }
-snark-verifier-sdk = { git = "https://github.com/timoftime/snark-verifier", branch = "yul-codegen", default-features = false }
-# snark-verifier = { path = "../snark-verifier/snark-verifier" }
-# snark-verifier-sdk = { path = "../snark-verifier/snark-verifier-sdk" }
-
+halo2-base = { git = "https://github.com/nulltea/halo2-lib", branch = "feat/bls12-381-hash2curve" }
+halo2-ecc = { git = "https://github.com/nulltea/halo2-lib", branch = "feat/bls12-381-hash2curve" }
+zkevm-hashes = { git = "https://github.com/nulltea/halo2-lib", branch = "feat/bls12-381-hash2curve" }

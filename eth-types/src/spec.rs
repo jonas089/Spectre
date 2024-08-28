@@ -1,6 +1,12 @@
+// The Licensed Work is (c) 2023 ChainSafe
+// Code: https://github.com/ChainSafe/Spectre
+// SPDX-License-Identifier: LGPL-3.0-only
+
 use core::fmt::Debug;
 
+/// Beacon chain specification.
 pub trait Spec: 'static + Sized + Copy + Default + Debug {
+    const NAME: &'static str;
     const SYNC_COMMITTEE_SIZE: usize;
     const SYNC_COMMITTEE_ROOT_INDEX: usize;
     const SYNC_COMMITTEE_DEPTH: usize;
@@ -20,6 +26,7 @@ pub trait Spec: 'static + Sized + Copy + Default + Debug {
 pub struct Minimal;
 
 impl Spec for Minimal {
+    const NAME: &'static str = "minimal";
     const SYNC_COMMITTEE_SIZE: usize = 32;
     const SYNC_COMMITTEE_DEPTH: usize = 5;
     const SYNC_COMMITTEE_ROOT_INDEX: usize = 55;
@@ -40,6 +47,7 @@ impl Spec for Minimal {
 pub struct Testnet;
 
 impl Spec for Testnet {
+    const NAME: &'static str = "testnet";
     const SYNC_COMMITTEE_SIZE: usize = 512;
     const SYNC_COMMITTEE_DEPTH: usize = 5;
     const SYNC_COMMITTEE_ROOT_INDEX: usize = 55;
@@ -59,6 +67,7 @@ impl Spec for Testnet {
 pub struct Mainnet;
 
 impl Spec for Mainnet {
+    const NAME: &'static str = "mainnet";
     const SYNC_COMMITTEE_SIZE: usize = 512;
     const SYNC_COMMITTEE_DEPTH: usize = 5;
     const SYNC_COMMITTEE_ROOT_INDEX: usize = 55;

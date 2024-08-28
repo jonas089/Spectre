@@ -1,27 +1,39 @@
-// SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+// // The Licensed Work is (c) 2023 ChainSafe
+// // Code: https://github.com/ChainSafe/Spectre
+// // SPDX-License-Identifier: LGPL-3.0-only
 
-import "forge-std/Script.sol";
+// pragma solidity ^0.8.0;
 
-import {Spectre} from "../src/Spectre.sol";
-import {Verifier as CommitteeUpdateVerifier} from "../snark-verifiers/committee_update_verifier.sol"; 
-import {Verifier as SyncStepVerifier} from "../snark-verifiers/sync_step.sol"; 
+// import "forge-std/Script.sol";
 
-contract DeploySpectre is Script {
+// import {Spectre} from "../src/Spectre.sol";
+// import {Halo2Verifier as CommitteeUpdateVerifier} from "../snark-verifiers/testnet/committee_update_verifier.sol";
+// import {Halo2Verifier as SyncStepVerifier} from "../snark-verifiers/testnet/sync_step_verifier.sol";
 
-    function run() external {
-        uint256 deployerPrivateKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
-        uint256 initialSyncPeriod = vm.envUint("INITIAL_SYNC_PERIOD");
-        uint256 initialCommitteePoseidon = vm.envUint("INITIAL_COMMITTEE_POSEIDON");
-        uint256 slotsPerPeriod = vm.envUint("SLOTS_PER_PERIOD");
+// contract DeploySpectre is Script {
+//     function run() external {
+//         uint256 deployerPrivateKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
+//         uint256 initialSyncPeriod = vm.envUint("INITIAL_SYNC_PERIOD");
+//         uint256 initialCommitteePoseidon = vm.envUint(
+//             "INITIAL_COMMITTEE_POSEIDON"
+//         );
+//         uint256 slotsPerPeriod = vm.envUint("SLOTS_PER_PERIOD");
+//         uint16 finalityThreshold = uint16(vm.envUint("FINALITY_THRESHOLD"));
 
-        vm.startBroadcast(deployerPrivateKey);
+//         vm.startBroadcast(deployerPrivateKey);
 
-        SyncStepVerifier stepVerifier = new SyncStepVerifier();
-        CommitteeUpdateVerifier updateVerifier = new CommitteeUpdateVerifier();
+//         SyncStepVerifier stepVerifier = new SyncStepVerifier();
+//         CommitteeUpdateVerifier updateVerifier = new CommitteeUpdateVerifier();
 
-        Spectre spectre = new Spectre(address(stepVerifier), address(updateVerifier), initialSyncPeriod, initialCommitteePoseidon, slotsPerPeriod);
-        
-        vm.stopBroadcast();
-    }
-}
+//         new Spectre(
+//             address(stepVerifier),
+//             address(updateVerifier),
+//             initialSyncPeriod,
+//             initialCommitteePoseidon,
+//             slotsPerPeriod,
+//             finalityThreshold
+//         );
+
+//         vm.stopBroadcast();
+//     }
+// }

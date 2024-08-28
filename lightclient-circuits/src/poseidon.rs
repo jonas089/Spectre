@@ -1,14 +1,19 @@
-use eth_types::{Field, LIMB_BITS};
+// The Licensed Work is (c) 2023 ChainSafe
+// Code: https://github.com/ChainSafe/Spectre
+// SPDX-License-Identifier: LGPL-3.0-only
+
+use eth_types::{Field, NUM_LIMBS};
 use halo2_base::{
-    gates::GateInstructions, halo2_proofs::halo2curves::bn256, halo2_proofs::plonk::Error,
-    poseidon::hasher::PoseidonSponge, AssignedValue, Context, QuantumCell,
+    gates::GateInstructions,
+    halo2_proofs::{halo2curves::bn256, plonk::Error},
+    poseidon::hasher::PoseidonSponge,
+    utils::modulus,
+    AssignedValue, Context, QuantumCell,
 };
 use halo2_ecc::{bigint::ProperCrtUint, bls12_381::FpChip, fields::FieldChip};
-use halo2curves::{
-    bls12_381::{self, Fq},
-    group::UncompressedEncoding,
-};
+use halo2curves::bls12_381::{self, Fq, G1Affine};
 use itertools::Itertools;
+use num_bigint::BigUint;
 use pse_poseidon::Poseidon as PoseidonNative;
 
 // Using recommended parameters from whitepaper https://eprint.iacr.org/2019/458.pdf (table 2, table 8)
@@ -18,15 +23,27 @@ const N_ROUNDS_PC: [usize; 16] = [
     56, 57, 56, 60, 60, 63, 64, 63, 60, 66, 60, 65, 70, 60, 64, 68,
 ];
 
+// Empirically chosen to take the least space in circuit.
 const POSEIDON_SIZE: usize = 11;
 const T: usize = POSEIDON_SIZE + 1;
 const R_P: usize = N_ROUNDS_PC[T - 2];
 const R_F: usize = 8;
 
-pub fn fq_array_poseidon<'a, F: Field>(
+/// Generates Poseidon hash commitment to a list of BLS12-381 Fq elements.
+///
+/// Fields elements are initially represented as `NUM_LIMBS` limbs of `LIMB_BITS` bits each.
+/// By composing element two limbs in one, we reduce the number of inputs to Poseidon in half.
+///
+/// Each Poseidon sponge absorbs `POSEIDON_SIZE`-2 elements and previos sponge output if it's not the first batch, ie. onion commitment.
+///
+/// Assumes that:
+/// - `LIMB_BITS` * 2 < 254 (BN254)
+/// - `x_coords` and `y_signs_packed` are not zero length
+pub fn g1_array_poseidon<F: Field>(
     ctx: &mut Context<F>,
     fp_chip: &FpChip<F>,
-    fields: impl IntoIterator<Item = &'a ProperCrtUint<F>>,
+    x_coords: impl IntoIterator<Item = ProperCrtUint<F>>,
+    y_signs_packed: impl IntoIterator<Item = AssignedValue<F>>,
 ) -> Result<AssignedValue<F>, Error> {
     let gate = fp_chip.gate();
     let limbs_bases = fp_chip.limb_bases[..2]
@@ -34,22 +51,39 @@ pub fn fq_array_poseidon<'a, F: Field>(
         .map(|c| QuantumCell::Constant(*c))
         .collect_vec();
 
-    let limbs = fields
+    let limbs = x_coords
         .into_iter()
         .flat_map(|f| {
             // Fold 4 limbs into 2 to reduce number of posedidon inputs in half.
-            f.limbs()
+            // Extra limb is a result of halo2lib bigint strategy that while only need 4 limbs to represent BLS12-381 modulus,
+            // requires an extra limb for correct carry mod operations.
+            let (limbs, extra) = f.limbs().split_at(NUM_LIMBS - (NUM_LIMBS % 2));
+            assert!(extra.len() <= 1);
+            if let Some(extra) = extra.first() {
+                let zero = ctx.load_zero();
+                ctx.constrain_equal(extra, &zero); // At this point extra limb should always be zero.
+            }
+
+            limbs
                 .chunks(2)
                 .map(|limbs| gate.inner_product(ctx, limbs.to_vec(), limbs_bases.clone()))
                 .collect_vec()
         })
         .collect_vec();
 
+    assert!(!limbs.is_empty(), "No G1 affines to hash");
+
     let mut poseidon = PoseidonSponge::<F, T, POSEIDON_SIZE>::new::<R_F, R_P, 0>(ctx);
 
     let mut current_poseidon_hash = None;
 
-    for (i, chunk) in limbs.chunks(POSEIDON_SIZE - 2).enumerate() {
+    for (i, chunk) in limbs
+        .into_iter()
+        .chain(y_signs_packed)
+        .collect_vec()
+        .chunks(POSEIDON_SIZE - 2)
+        .enumerate()
+    {
         poseidon.update(chunk);
         if i != 0 {
             poseidon.update(&[current_poseidon_hash.unwrap()]);
@@ -60,20 +94,46 @@ pub fn fq_array_poseidon<'a, F: Field>(
     Ok(current_poseidon_hash.unwrap())
 }
 
-pub fn fq_array_poseidon_native<F: Field>(elems: impl Iterator<Item = Fq>, limb_bits: usize) -> F {
-    let limbs = elems
+/// Generates Poseidon hash commitment to a list of BLS12-381 Fq elements.
+///
+/// This is the off-circuit analog of `fq_array_poseidon`.
+fn poseidon_hash_g1_array<F: Field>(
+    x_coords: impl IntoIterator<Item = Fq>,
+    y_signs: impl IntoIterator<Item = bool>,
+    limb_bits: usize,
+) -> F {
+    let limbs = x_coords
+        .into_iter()
         // Converts Fq elements to Fr limbs.
         .flat_map(|x| {
             x.to_bytes_le()
                 .chunks((limb_bits / 8) * 2)
                 .map(F::from_bytes_le)
                 .collect_vec()
-        })
-        .collect_vec();
+        });
     let mut poseidon = PoseidonNative::<F, T, POSEIDON_SIZE>::new(R_F, R_P);
     let mut current_poseidon_hash = None;
 
-    for (i, chunk) in limbs.chunks(POSEIDON_SIZE - 2).enumerate() {
+    let y_signs = y_signs
+        .into_iter()
+        .map(|sign| F::from(sign as u64))
+        .collect_vec()
+        .chunks(bn256::Fr::CAPACITY as usize - 1)
+        .map(|chunk| {
+            let mut packed = F::ZERO;
+            for (i, bit) in chunk.iter().enumerate() {
+                packed += *bit * (F::from(2u64).pow([i as u64]));
+            }
+            packed
+        })
+        .collect_vec();
+
+    for (i, chunk) in limbs
+        .chain(y_signs)
+        .collect_vec()
+        .chunks(POSEIDON_SIZE - 2)
+        .enumerate()
+    {
         poseidon.update(chunk);
         if i != 0 {
             poseidon.update(&[current_poseidon_hash.unwrap()]);
@@ -83,28 +143,41 @@ pub fn fq_array_poseidon_native<F: Field>(elems: impl Iterator<Item = Fq>, limb_
     current_poseidon_hash.unwrap()
 }
 
+/// Wrapper on `poseidon_hash_fq_array` taking pubkeys encoded as uncompressed bytes.
 pub fn poseidon_committee_commitment_from_uncompressed(
     pubkeys_uncompressed: &[Vec<u8>],
+    limb_bits: usize,
 ) -> bn256::Fr {
-    let pubkey_affines = pubkeys_uncompressed
+    let (x_coords, y_signs): (Vec<_>, Vec<_>) = pubkeys_uncompressed
         .iter()
         .cloned()
-        .map(|bytes| {
-            halo2curves::bls12_381::G1Affine::from_uncompressed_unchecked(
-                &bytes.as_slice().try_into().unwrap(),
-            )
-            .unwrap()
+        .map(|bytes| G1Affine::from_uncompressed_be(&bytes.as_slice().try_into().unwrap()).unwrap())
+        .map(|p| {
+            let y = BigUint::from_bytes_le(p.y.to_repr().as_ref()) * BigUint::from(2u64);
+            let sign = y > modulus::<halo2curves::bls12_381::Fq>();
+            (p.x, sign)
         })
-        .collect_vec();
+        .unzip();
 
-    fq_array_poseidon_native::<bn256::Fr>(pubkey_affines.iter().map(|p| p.x), LIMB_BITS)
+    poseidon_hash_g1_array::<bn256::Fr>(x_coords, y_signs, limb_bits)
 }
 
-pub fn poseidon_committee_commitment_from_compressed(pubkeys_compressed: &[Vec<u8>]) -> bn256::Fr {
-    let pubkeys_x = pubkeys_compressed.iter().cloned().map(|mut bytes| {
-        bytes[0] &= 0b00011111;
-        bls12_381::Fq::from_bytes_be(&bytes.try_into().unwrap())
-            .expect("bad bls12_381::Fq encoding")
-    });
-    fq_array_poseidon_native::<bn256::Fr>(pubkeys_x, LIMB_BITS)
+/// Wrapper on `poseidon_hash_fq_array` taking pubkeys encoded as compressed bytes.
+pub fn poseidon_committee_commitment_from_compressed(
+    pubkeys_compressed: &[Vec<u8>],
+    limb_bits: usize,
+) -> bn256::Fr {
+    let (x_coords, y_signs): (Vec<_>, Vec<_>) = pubkeys_compressed
+        .iter()
+        .cloned()
+        .map(|mut bytes| {
+            let sign = (bytes[0] & 0b00100000) != 0; // check that 3-rd MSB bit is set
+            bytes[0] &= 0b00011111; // clear flag bits
+            let x = bls12_381::Fq::from_bytes_be(&bytes.try_into().unwrap())
+                .expect("bad bls12_381::Fq encoding");
+
+            (x, sign)
+        })
+        .unzip();
+    poseidon_hash_g1_array::<bn256::Fr>(x_coords, y_signs, limb_bits)
 }

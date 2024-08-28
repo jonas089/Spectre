@@ -1,3 +1,7 @@
+// The Licensed Work is (c) 2023 ChainSafe
+// Code: https://github.com/ChainSafe/Spectre
+// SPDX-License-Identifier: LGPL-3.0-only
+
 mod gate;
 
 use eth_types::Field;
@@ -15,6 +19,8 @@ pub use self::gate::ShaBitGateManager;
 use super::{HashInstructions, ShaCircuitBuilder};
 use crate::gadget::common::to_bytes_le;
 
+/// [`Sha256ChipWide`] provides functions to compute SHA256 hash [`Sha256CircuitConfig`] gates.
+/// This is version of SHA256 chip is wider than is possible with [`Sha256Chip`] but it takes significantly less rows.
 #[derive(Debug)]
 pub struct Sha256ChipWide<'a, F: Field> {
     range: &'a RangeChip<F>,
@@ -32,7 +38,7 @@ impl<'a, F: Field> HashInstructions<F> for Sha256ChipWide<'a, F> {
         builder: &mut Self::CircuitBuilder,
         input: impl IntoIterator<Item = QuantumCell<F>>,
     ) -> Result<Vec<AssignedValue<F>>, Error> {
-        let assigned_bytes = input
+        let mut assigned_bytes = input
             .into_iter()
             .map(|cell| match cell {
                 QuantumCell::Existing(v) => v,
@@ -45,7 +51,7 @@ impl<'a, F: Field> HashInstructions<F> for Sha256ChipWide<'a, F> {
         let binary_input: HashInput<u8> = HashInput::Single(
             assigned_bytes
                 .iter()
-                .map(|av| av.value().get_lower_32() as u8)
+                .map(|av| u8::try_from(av.value().get_lower_32()).expect("truncated"))
                 .collect_vec()
                 .into(),
         );
@@ -69,8 +75,14 @@ impl<'a, F: Field> HashInstructions<F> for Sha256ChipWide<'a, F> {
             .map(|i| QuantumCell::Constant(gate.pow_of_two()[i * 8]))
             .collect_vec();
 
+        // Following code will check the consitency of halo2-lib input bytes with their word representation in halo2 vanilla
+        // Since words are 4 bytes each, we extend the input bytes to be a multiple of 4 with zero bytes in a same way as it's done in vanilla during witness assignment.
+        assigned_bytes.resize_with(num_input_words * 4, || builder.main().load_zero());
+
         for r in 0..num_input_rounds {
-            for w in 0..(num_input_words - r * NUM_WORDS_TO_ABSORB) {
+            let remaining_words = num_input_words - r * NUM_WORDS_TO_ABSORB;
+
+            for w in 0..std::cmp::min(remaining_words, NUM_WORDS_TO_ABSORB) {
                 let i = (r * NUM_WORDS_TO_ABSORB + w) * 4;
                 let checksum = gate.inner_product(
                     builder.main(),
@@ -115,79 +127,3 @@ pub fn word_to_bytes_le<F: Field>(
         .chain(to_bytes_le::<_, 16>(&word.hi(), gate, ctx))
         .collect()
 }
-
-// #[cfg(test)]
-// mod test {
-//     use std::env::var;
-//     use std::vec;
-//     use std::{cell::RefCell, marker::PhantomData};
-
-//     use crate::gadget::crypto::{constant_randomness, ShaCircuitBuilder};
-//     use crate::util::{full_prover, full_verifier, gen_pkey, Challenges, IntoWitness};
-
-//     use super::*;
-//     use ark_std::{end_timer, start_timer};
-//     use eth_types::Testnet;
-//     use halo2_base::gates::builder::FlexGateConfigParams;
-//     use halo2_base::gates::range::RangeConfig;
-//     use halo2_base::utils::fs::gen_srs;
-//     use halo2_base::SKIP_FIRST_PASS;
-//     use halo2_base::{
-//         gates::{builder::GateThreadBuilder, range::RangeStrategy},
-//         halo2_proofs::{
-//             circuit::{Layouter, SimpleFloorPlanner},
-//             dev::MockProver,
-//             halo2curves::bn256::Fr,
-//             plonk::{Circuit, ConstraintSystem},
-//         },
-//     };
-//     use sha2::{Digest, Sha256};
-
-//     // fn test_circuit<F: Field>(
-//     //     k: usize,
-//     //     builder: &mut ShaBitThreadBuilder<F>,
-//     //     input_vector: &[Vec<u8>],
-//     // ) -> Result<(), Error> {
-//     //     let range = RangeChip::default(8);
-//     //     let sha256 = Sha256ChipWide::new(&range, constant_randomness());
-
-//     //     for input in input_vector {
-//     //         let _ = sha256.digest::<64>(builder, input.as_slice().into_witness(), false)?;
-//     //     }
-
-//     //     builder.config(k, None);
-
-//     //     Ok(())
-//     // }
-
-//     // #[test]
-//     // fn test_sha256_chip_constant_size() {
-//     //     let k = 10;
-
-//     //     let test_input = vec![0u8; 64];
-
-//     //     let mut builder = ShaBitThreadBuilder::<Fr>::mock();
-
-//     //     test_circuit(k, &mut builder, &[test_input]).unwrap();
-
-//     //     let circuit = ShaCircuitBuilder::mock(builder);
-
-//     //     let prover = MockProver::run(k as u32, &circuit, vec![]).unwrap();
-
-//     //     prover.assert_satisfied_par();
-//     // }
-
-//     // #[test]
-//     // fn test_sha256_wide_params_gen() {
-//     //     let k = 10;
-//     //     let test_input = vec![1u8; 64];
-//     //     let mut builder = ShaBitThreadBuilder::<Fr>::keygen();
-
-//     //     test_circuit(k, &mut builder, &[test_input]).unwrap();
-
-//     //     let circuit = ShaCircuitBuilder::keygen(builder);
-
-//     //     let params = gen_srs(k as u32);
-//     //     let pk = gen_pkey(|| "sha256_wide_chip", &params, None, &circuit).unwrap();
-//     // }
-// }

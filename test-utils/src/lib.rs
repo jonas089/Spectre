@@ -1,3 +1,7 @@
+// The Licensed Work is (c) 2023 ChainSafe
+// Code: https://github.com/ChainSafe/Spectre
+// SPDX-License-Identifier: LGPL-3.0-only
+
 #![allow(incomplete_features)]
 #![feature(generic_const_exprs)]
 
@@ -6,7 +10,7 @@ mod test_types;
 
 use crate::execution_payload_header::ExecutionPayloadHeader;
 use crate::test_types::{ByteVector, TestMeta, TestStep};
-use eth_types::Minimal;
+use eth_types::{Minimal, LIMB_BITS};
 use ethereum_consensus_types::presets::minimal::{
     LightClientBootstrap, LightClientUpdateCapella, BYTES_PER_LOGS_BLOOM, MAX_EXTRA_DATA_BYTES,
 };
@@ -15,7 +19,7 @@ use ethereum_consensus_types::{BeaconBlockHeader, SyncCommittee};
 use ethereum_consensus_types::{ForkData, Root};
 use itertools::Itertools;
 use lightclient_circuits::poseidon::poseidon_committee_commitment_from_uncompressed;
-use lightclient_circuits::witness::{CommitteeRotationArgs, SyncStepArgs};
+use lightclient_circuits::witness::{CommitteeUpdateArgs, SyncStepArgs};
 use ssz_rs::prelude::*;
 use ssz_rs::Merkleized;
 use std::ops::Deref;
@@ -36,10 +40,12 @@ pub fn get_initial_sync_committee_poseidon<const EPOCHS_PER_SYNC_COMMITTEE_PERIO
         .iter()
         .map(|pk| pk.decompressed_bytes())
         .collect_vec();
-    let committee_poseidon = poseidon_committee_commitment_from_uncompressed(&pubkeys_uncompressed);
+    let committee_poseidon =
+        poseidon_committee_commitment_from_uncompressed(&pubkeys_uncompressed, LIMB_BITS);
     let committee_poseidon =
         ethers::prelude::U256::from_little_endian(&committee_poseidon.to_bytes());
-    let sync_period = (bootstrap.header.beacon.slot as usize) / EPOCHS_PER_SYNC_COMMITTEE_PERIOD;
+    let sync_period = (usize::try_from(bootstrap.header.beacon.slot).expect("truncated"))
+        / EPOCHS_PER_SYNC_COMMITTEE_PERIOD;
     Ok((sync_period, committee_poseidon))
 }
 
@@ -80,7 +86,7 @@ pub fn valid_updates_from_test_path(
 
 pub fn read_test_files_and_gen_witness(
     path: &Path,
-) -> (SyncStepArgs<Minimal>, CommitteeRotationArgs<Minimal>) {
+) -> (SyncStepArgs<Minimal>, CommitteeUpdateArgs<Minimal>) {
     let bootstrap: LightClientBootstrap =
         load_snappy_ssz(path.join("bootstrap.ssz_snappy").to_str().unwrap()).unwrap();
 
@@ -109,7 +115,7 @@ pub fn read_test_files_and_gen_witness(
 
     sync_committee_branch.insert(0, agg_pk.hash_tree_root().unwrap().deref().to_vec());
 
-    let rotation_wit = CommitteeRotationArgs::<Minimal> {
+    let rotation_wit = CommitteeUpdateArgs::<Minimal> {
         pubkeys_compressed: updates[0]
             .next_sync_committee
             .pubkeys

@@ -1,6 +1,11 @@
+// The Licensed Work is (c) 2023 ChainSafe
+// Code: https://github.com/ChainSafe/Spectre
+// SPDX-License-Identifier: LGPL-3.0-only
+
 use std::{ops::Deref, sync::Arc};
 
 use beacon_api_client::{BlockId, VersionedValue};
+use eth_types::LIMB_BITS;
 use ethereum_consensus_types::LightClientBootstrap;
 use itertools::Itertools;
 use lightclient_circuits::poseidon::poseidon_committee_commitment_from_uncompressed;
@@ -35,7 +40,7 @@ pub(crate) async fn utils_cli(method: UtilsCmd) -> eyre::Result<()> {
             };
 
             let sync_period = bootstrap.header.beacon.slot / (32 * 256);
-            print!("{} \n", sync_period);
+            println!("Sync period: {}", sync_period);
             let pubkeys_uncompressed = bootstrap
                 .current_sync_committee
                 .pubkeys
@@ -48,11 +53,13 @@ pub(crate) async fn utils_cli(method: UtilsCmd) -> eyre::Result<()> {
                 .pubkeys
                 .hash_tree_root()
                 .unwrap();
-            println!("ssz root: {:?}", hex::encode(ssz_root.deref()));
+            println!("SSZ root: {:?}", hex::encode(ssz_root.deref()));
 
-            let committee_poseidon =
-                poseidon_committee_commitment_from_uncompressed(&pubkeys_uncompressed).to_bytes();
-            print!("{}", hex::encode(committee_poseidon));
+            let mut committee_poseidon =
+                poseidon_committee_commitment_from_uncompressed(&pubkeys_uncompressed, LIMB_BITS)
+                    .to_bytes();
+            committee_poseidon.reverse();
+            println!("Poseidon commitment: {}", hex::encode(committee_poseidon));
 
             Ok(())
         }

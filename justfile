@@ -14,32 +14,35 @@ lint: fmt
     cargo clippy --all-targets --all-features --workspace
 
 setup-step network *k='22':
-    cargo run -r -- circuit sync-step -p ./build/sync_step_$1.pkey -k $2 setup
+    cargo run -r -p spectre-prover -- circuit sync-step -p ./build/sync_step_$1.pkey -k $2 setup
 
 setup-step-compressed network *k='23':
-    cargo run -r -- circuit sync-step-compressed -p ./build/sync_step_$1.pkey -k 21 \
-         --verifier-k $2 --verifier-pk-path ./build/sync_step_verifier_$1.pkey setup
+    cargo run -r -p spectre-prover -- circuit sync-step-compressed -k 21 -p ./build/sync_step_$1.pkey  \
+         -K $2 -P ./build/sync_step_verifier_$1.pkey -L 19 setup
 
-setup-committee-update network *k='25':
-    cargo run -r -- circuit committee-update -p ./build/committee_update_$1.pkey -k 18 \
-         --verifier-k $2 --verifier-pk-path ./build/committee_update_verifier_$1.pkey setup
+setup-committee-update network *k='24':
+    cargo run -r -p spectre-prover -- circuit committee-update -k 20 -p ./build/committee_update_$1.pkey  \
+         -K $2 -P ./build/committee_update_verifier_$1.pkey setup
 
 gen-verifier-step network:
-    cargo run -r -- circuit sync-step -p ./build/sync_step_$1.pkey gen-verifier -o ./contracts/snark-verifiers/sync_step.sol
+    cargo run -r -p spectre-prover -- circuit sync-step -p ./build/sync_step_$1.pkey gen-verifier -o ./contracts/$1/snark-verifiers/sync_step.sol
 
 gen-verifier-step-compressed network:
-    cargo run -r -- circuit sync-step-compressed -p ./build/sync_step_$1.pkey --verifier-pk-path ./build/sync_step_verifier_$1.pkey \
-        gen-verifier -o ./contracts/snark-verifiers/sync_step_verifier.sol
+    cargo run -r -p spectre-prover -- circuit sync-step-compressed -p ./build/sync_step_$1.pkey -P ./build/sync_step_verifier_$1.pkey \
+        gen-verifier -o ./contracts/snark-verifiers/$1/sync_step_verifier.sol
 
 gen-verifier-committee-update network:
-    cargo run -r -- circuit committee-update -p ./build/committee_update_$1.pkey --verifier-pk-path ./build/committee_update_verifier_$1.pkey \
-        gen-verifier -o ./contracts/snark-verifiers/committee_update_verifier.sol
+    cargo run -r -p spectre-prover -- circuit committee-update -p ./build/committee_update_$1.pkey -P ./build/committee_update_verifier_$1.pkey \
+        gen-verifier -o ./contracts/snark-verifiers/$1/committee_update_verifier.sol
 
 build-contracts:
     cd contracts && forge build
 
 deploy-contracts-local:
-    cd contracts && forge script ./script/DeploySpectre.s.sol:DeploySpectre --fork-url $LOCAL_RPC_URL --broadcast
+    cd contracts && forge script ./script/DeploySpectreLocal.s.sol:DeploySpectre --fork-url $LOCAL_RPC_URL --broadcast
+
+deploy-contracts-testnet:
+    cd contracts && forge script ./script/DeploySpectre.s.sol:DeploySpectre --private-key $DEPLOYER_PRIVATE_KEY --fork-url $SEPOLIA_RPC_URL --broadcast
 
 deploy-contracts network: # network one of [MAINNET, GOERLI, SEPOLIA]
     #! /usr/bin/env bash
@@ -51,7 +54,7 @@ download-spec-tests: clean-spec-tests
     #!/usr/bin/env bash
     if [[ ! -d 'consensus-spec-tests' ]]; then
         echo "Downloading test data."
-        test-utils/scripts/download_consensus_specs.sh
+        bash test-utils/scripts/download_consensus_specs.sh
     fi
 
 # deletes all the downloaded spec tests
