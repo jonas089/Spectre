@@ -41,7 +41,7 @@ jobs:
       - name: Extract Version
         run: |
           echo "VERSION=${GITHUBREF#refs/tags/}" >> $GITHUB_ENV
-          echo "REPO_NAME=${ github.repository@L }" >> $GITHUB_ENV
+          echo "REPO_NAME=${GITHUB_REPOSITORY@L}" >> $GITHUB_ENV
 
       - name: build / tag / push docker image into ghcr
         id: build-and-push-tag
