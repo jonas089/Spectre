@@ -47,7 +47,7 @@ jobs:
         with:
           context: .
           push: true
-          tags: ${{ env.REGISTRY }}/${{ github.repository }}:${{ env.TAG }},${{ env.REGISTRY }}/${{ github.repository }}:${{ env.VERSION }}
+          tags: "${{ env.REGISTRY }}/${{ github.repository }}:${{ env.TAG }}".lower(),"${{ env.REGISTRY }}/${{ github.repository }}:${{ env.VERSION }}".lower()
 
       # - name: slack notify
       #   uses: 8398a7/action-slack@v3
