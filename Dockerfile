@@ -28,6 +28,6 @@ apt-get install libssl-dev -y
 chmod +x /spectre-prover-cli
 mkdir -p /build /params
 EOF
-LABEL LABEL org.opencontainers.image.source https://github.com/chainsafe/spectre
+LABEL org.opencontainers.image.source=https://github.com/ChainSafe/Spectre
 ENTRYPOINT ["./spectre-prover-cli", "rpc", "--port", "3000"]
 CMD ["--spec", "testnet"]
