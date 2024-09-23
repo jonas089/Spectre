@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 
 use ark_std::{end_timer, start_timer};
+use axum::routing::get;
 use axum::{http::StatusCode, response::IntoResponse, routing::post, Router};
 use ethers::prelude::*;
 use jsonrpc_v2::{Data, RequestObject as JsonRpcRequestObject};
@@ -180,6 +181,12 @@ where
     )?)
 }
 
+// health check endopoint
+pub(crate) async fn health_check_handler(
+) -> &'static str {
+    "UP"
+}
+
 pub async fn run_rpc<S: eth_types::Spec>(
     port: usize,
     config_dir: impl AsRef<Path>,
@@ -202,6 +209,7 @@ where
     let rpc_server = Arc::new(jsonrpc_server::<S>(state));
     let router = Router::new()
         .route("/rpc", post(handler))
+        .route("/health", get(health_check_handler))
         .with_state(rpc_server);
 
     log::info!("Ready for RPC connections");
