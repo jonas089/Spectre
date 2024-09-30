@@ -20,7 +20,7 @@ EOF
 FROM debian:stable
 ENV RUST_BACKTRACE=full
 WORKDIR /
-COPY /lightclient-circuits/config/ /lightclient-circuits/config/
+COPY /lightclient-circuits/ /lightclient-circuits/
 COPY --from=builder /target/release/spectre-prover-cli /spectre-prover-cli
 RUN <<-EOF
 apt-get update -y
