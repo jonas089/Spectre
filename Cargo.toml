@@ -6,7 +6,6 @@ members = [
     "eth-types",
     "contract-tests",
     "test-utils",
-    "contracts",
 ]
 
 resolver = "2"
@@ -36,7 +35,6 @@ lightclient-circuits = { path = "lightclient-circuits" }
 test-utils = { path = "test-utils" }
 
 eth-types = { path = "eth-types" }
-contracts = { path = "contracts" }
 preprocessor = { path = "preprocessor" }
 
 

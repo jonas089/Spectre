@@ -19,4 +19,4 @@ eth-types = { workspace = true }
 ssz_rs = { workspace = true }
 halo2-base = { workspace = true }
 snark-verifier-sdk = { workspace = true }
-contracts = { workspace = true }
+contracts = { git = "https://github.com/jonas089/spectre-contracts" }
