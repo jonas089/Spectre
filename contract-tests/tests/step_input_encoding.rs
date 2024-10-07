@@ -14,11 +14,13 @@ use rstest::rstest;
 use ssz_rs::Merkleized;
 use test_utils::read_test_files_and_gen_witness;
 
+#[cfg(feature = "contracts")]
 abigen!(
     StepExternal,
     "../contracts/out/StepExternal.sol/StepExternal.json";
 );
 
+#[cfg(feature = "contracts")]
 // SyncStepInput type produced by abigen macro matches the solidity struct type
 impl<Spec: eth_types::Spec> From<SyncStepArgs<Spec>> for StepInput {
     fn from(args: SyncStepArgs<Spec>) -> Self {
@@ -51,6 +53,7 @@ impl<Spec: eth_types::Spec> From<SyncStepArgs<Spec>> for StepInput {
 
 #[rstest]
 #[tokio::test]
+#[cfg(feature = "contracts")]
 async fn test_step_instance_commitment_evm_equivalence(
     #[files("../consensus-spec-tests/tests/minimal/capella/light_client/sync/pyspec_tests/**")]
     #[exclude("deneb*")]

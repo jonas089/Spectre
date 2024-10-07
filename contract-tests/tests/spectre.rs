@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use contract_tests::make_client;
+#[cfg(feature = "contracts")]
 use contracts::{MockVerifier, Spectre};
 use eth_types::{Minimal, LIMB_BITS};
 use ethers::core::types::U256;
@@ -25,6 +26,8 @@ const SLOTS_PER_SYNC_COMMITTEE_PERIOD: usize = EPOCHS_PER_SYNC_COMMITTEE_PERIOD 
 const FINALITY_THRESHOLD: usize = 20; // ~ 2/3 of 32
 
 #[tokio::test]
+#[cfg(feature = "contracts")]
+
 async fn test_deploy_spectre() -> anyhow::Result<()> {
     let (_anvil_instance, ethclient) = make_client();
     let _contract = deploy_spectre_mock_verifiers(ethclient, 0, U256::zero(), 0).await?;
@@ -33,6 +36,8 @@ async fn test_deploy_spectre() -> anyhow::Result<()> {
 
 #[rstest]
 #[tokio::test]
+#[cfg(feature = "contracts")]
+
 async fn test_contract_initialization_and_first_step(
     #[files("../consensus-spec-tests/tests/minimal/capella/light_client/sync/pyspec_tests/**")]
     #[exclude("deneb*")]
@@ -86,6 +91,7 @@ async fn test_contract_initialization_and_first_step(
 /// Deploy the Spectre contract using the given ethclient
 /// Also deploys the step verifier and the update verifier contracts
 /// and passes their addresses along with the other params to the constructor
+#[cfg(feature = "contracts")]
 async fn deploy_spectre_mock_verifiers<M: Middleware + 'static>(
     ethclient: Arc<M>,
     initial_sync_period: usize,
