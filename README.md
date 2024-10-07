@@ -1,6 +1,6 @@
 # Spectre
 
-Spectre is a Zero-Knowledge (ZK) coprocessor designed to offload intensive computations from the resource-limited execution layer of target chains. Iit offers a trust-minimized method for verifying block headers, adhering to the consensus rules of the originating chain.
+Spectre is a Zero-Knowledge (ZK) coprocessor designed to offload intensive computations from the resource-limited execution layer of target chains. It offers a trust-minimized method for verifying block headers, adhering to the consensus rules of the originating chain.
 
 The type of outsourced computation is specific to the arithmetic circuits. For Spectre, its primary function is to verify the Ethereum LightClient protocol introduced in the Altair hardfork.
 
@@ -16,7 +16,7 @@ Spectre prover utilizes the Halo2 proving stack ([`privacy-scaling-explorations/
 
 Circuits are implemented with the [`halo2-lib`](https://github.com/axiom-crypto/halo2-lib) circuit development framework. This library contains a number of non-trivial optimization tricks, while its readable SDK prevents most of the soundness bugs and improves auditability. Our team has contributed a number of features back to the halo2-lib repository, containing some foundational cryptographic primitives powering Ethereum consensus.
 
-Verifier contracts for consensus proofs are auto-generated via the [`privacy-scaling-explorations/snark-verifier`](https://github.com/privacy-scaling-explorations/snark-verifier). We aslo support [`privacy-scaling-explorations/halo2-solidity-verifier`](https://github.com/privacy-scaling-explorations/halo2-solidity-verifier) behind `experimental` flag. Supplemental contract logic has been introduced exclusively to manage intermediary states during proof verifications.
+Verifier contracts for consensus proofs are auto-generated via the [`privacy-scaling-explorations/snark-verifier`](https://github.com/privacy-scaling-explorations/snark-verifier). We also support [`privacy-scaling-explorations/halo2-solidity-verifier`](https://github.com/privacy-scaling-explorations/halo2-solidity-verifier) behind `experimental` flag. Supplemental contract logic has been introduced exclusively to manage intermediary states during proof verifications.
 
 ## Usage
 
