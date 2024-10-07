@@ -6,28 +6,30 @@
  * These are the highest level integration tests for the Spectre protocol
  * They treat the Spectre contract as an ethereum light-client and test against the spec
  */
-use std::path::PathBuf;
-use std::sync::Arc;
 
-use contract_tests::make_client;
 #[cfg(feature = "contracts")]
-use contracts::{MockVerifier, Spectre};
-use eth_types::{Minimal, LIMB_BITS};
-use ethers::core::types::U256;
-use ethers::providers::Middleware;
-use halo2_base::halo2_proofs::halo2curves::bn256::Fr;
-use lightclient_circuits::sync_step_circuit::StepCircuit;
-use rstest::rstest;
-use test_utils::{get_initial_sync_committee_poseidon, read_test_files_and_gen_witness};
+mod contract_integration {
+    use std::path::PathBuf;
+    use std::sync::Arc;
 
-const SLOTS_PER_EPOCH: usize = 8;
-const EPOCHS_PER_SYNC_COMMITTEE_PERIOD: usize = 8;
-const SLOTS_PER_SYNC_COMMITTEE_PERIOD: usize = EPOCHS_PER_SYNC_COMMITTEE_PERIOD * SLOTS_PER_EPOCH;
-const FINALITY_THRESHOLD: usize = 20; // ~ 2/3 of 32
+    use contract_tests::make_client;
+    use contracts::{MockVerifier, Spectre};
+    use eth_types::{Minimal, LIMB_BITS};
+    use ethers::core::types::U256;
+    use ethers::providers::Middleware;
+    use halo2_base::halo2_proofs::halo2curves::bn256::Fr;
+    use lightclient_circuits::sync_step_circuit::StepCircuit;
+    use rstest::rstest;
+    use test_utils::{get_initial_sync_committee_poseidon, read_test_files_and_gen_witness};
+    const SLOTS_PER_EPOCH: usize = 8;
+    const EPOCHS_PER_SYNC_COMMITTEE_PERIOD: usize = 8;
+    const SLOTS_PER_SYNC_COMMITTEE_PERIOD: usize =
+        EPOCHS_PER_SYNC_COMMITTEE_PERIOD * SLOTS_PER_EPOCH;
+    const FINALITY_THRESHOLD: usize = 20; // ~ 2/3 of 32
+}
 
 #[tokio::test]
 #[cfg(feature = "contracts")]
-
 async fn test_deploy_spectre() -> anyhow::Result<()> {
     let (_anvil_instance, ethclient) = make_client();
     let _contract = deploy_spectre_mock_verifiers(ethclient, 0, U256::zero(), 0).await?;
@@ -37,7 +39,6 @@ async fn test_deploy_spectre() -> anyhow::Result<()> {
 #[rstest]
 #[tokio::test]
 #[cfg(feature = "contracts")]
-
 async fn test_contract_initialization_and_first_step(
     #[files("../consensus-spec-tests/tests/minimal/capella/light_client/sync/pyspec_tests/**")]
     #[exclude("deneb*")]
@@ -82,7 +83,6 @@ async fn test_contract_initialization_and_first_step(
         contract.execution_payload_roots(head).call().await?,
         step_input.execution_payload_root
     );
-
     Ok(())
 }
 

@@ -2,17 +2,20 @@
 // Code: https://github.com/ChainSafe/Spectre
 // SPDX-License-Identifier: LGPL-3.0-only
 
-use std::ops::Deref;
-use std::path::PathBuf;
+#[cfg(feature = "contracts")]
+mod contract_integration {
+    use std::ops::Deref;
+    use std::path::PathBuf;
 
-use contract_tests::make_client;
-use eth_types::{Minimal, LIMB_BITS};
-use ethers::contract::abigen;
-use lightclient_circuits::halo2_proofs::halo2curves::bn256;
-use lightclient_circuits::witness::SyncStepArgs;
-use rstest::rstest;
-use ssz_rs::Merkleized;
-use test_utils::read_test_files_and_gen_witness;
+    use contract_tests::make_client;
+    use eth_types::{Minimal, LIMB_BITS};
+    use ethers::contract::abigen;
+    use lightclient_circuits::halo2_proofs::halo2curves::bn256;
+    use lightclient_circuits::witness::SyncStepArgs;
+    use rstest::rstest;
+    use ssz_rs::Merkleized;
+    use test_utils::read_test_files_and_gen_witness;
+}
 
 #[cfg(feature = "contracts")]
 abigen!(
