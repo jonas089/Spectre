@@ -2,28 +2,23 @@
 // Code: https://github.com/ChainSafe/Spectre
 // SPDX-License-Identifier: LGPL-3.0-only
 
-#[cfg(feature = "contracts")]
-mod contract_integration {
-    use std::ops::Deref;
-    use std::path::PathBuf;
+use std::ops::Deref;
+use std::path::PathBuf;
 
-    use contract_tests::make_client;
-    use eth_types::{Minimal, LIMB_BITS};
-    use ethers::contract::abigen;
-    use lightclient_circuits::halo2_proofs::halo2curves::bn256;
-    use lightclient_circuits::witness::SyncStepArgs;
-    use rstest::rstest;
-    use ssz_rs::Merkleized;
-    use test_utils::read_test_files_and_gen_witness;
-}
+use contract_tests::make_client;
+use eth_types::{Minimal, LIMB_BITS};
+use ethers::contract::abigen;
+use lightclient_circuits::halo2_proofs::halo2curves::bn256;
+use lightclient_circuits::witness::SyncStepArgs;
+use rstest::rstest;
+use ssz_rs::Merkleized;
+use test_utils::read_test_files_and_gen_witness;
 
-#[cfg(feature = "contracts")]
 abigen!(
     StepExternal,
     "../contracts/out/StepExternal.sol/StepExternal.json";
 );
 
-#[cfg(feature = "contracts")]
 // SyncStepInput type produced by abigen macro matches the solidity struct type
 impl<Spec: eth_types::Spec> From<SyncStepArgs<Spec>> for StepInput {
     fn from(args: SyncStepArgs<Spec>) -> Self {
@@ -56,7 +51,6 @@ impl<Spec: eth_types::Spec> From<SyncStepArgs<Spec>> for StepInput {
 
 #[rstest]
 #[tokio::test]
-#[cfg(feature = "contracts")]
 async fn test_step_instance_commitment_evm_equivalence(
     #[files("../consensus-spec-tests/tests/minimal/capella/light_client/sync/pyspec_tests/**")]
     #[exclude("deneb*")]

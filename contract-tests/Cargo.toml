@@ -6,11 +6,6 @@ edition = "2021"
 [dependencies]
 ethers = "2.0.10"
 lightclient-circuits = { workspace = true }
-contracts = { path = "../contracts", optional = true }
-
-[features]
-contracts = ["dep:contracts"]
-
 
 [dev-dependencies]
 rstest = "0.18.2"
@@ -24,3 +19,4 @@ eth-types = { workspace = true }
 ssz_rs = { workspace = true }
 halo2-base = { workspace = true }
 snark-verifier-sdk = { workspace = true }
+contracts = { workspace = true }
