@@ -29,17 +29,17 @@ use halo2_ecc::{
     fields::FieldChip,
 };
 use itertools::Itertools;
-use serde::{Deserialize, Serialize};
 use ssz_rs::Merkleized;
-use std::{
-    env::var,
-    fs::File,
-    io::{Read, Result as IoResult, Write},
-    iter,
-    marker::PhantomData,
-    vec,
-};
+use std::{env::var, iter, marker::PhantomData, vec};
 
+/// `CommitteeUpdateCircuit` maps next sync committee SSZ root in the finalized state root to the corresponding Poseidon commitment to the public keys.
+///
+/// Assumes that public keys are BLS12-381 points on G1; `sync_committee_branch` is exactly `S::SYNC_COMMITTEE_PUBKEYS_DEPTH` hashes in lenght.
+///
+/// The circuit exposes two public inputs:
+/// - `poseidon_commit` is a Poseidon "onion" commitment to the X coordinates of sync committee public keys. Coordinates are expressed as big-integer with two limbs of LIMB_BITS * 2 bits.
+/// - `committee_root_ssz` is a Merkle SSZ root of the list of sync committee public keys.
+/// - `finalized_header_root` is a Merkle SSZ root of the finalized header.
 #[derive(Clone, Debug, Default)]
 pub struct CommitteeUpdateCircuit<S: Spec, F: Field> {
     _f: PhantomData<F>,
@@ -268,57 +268,25 @@ impl<S: Spec> AppCircuit for CommitteeUpdateCircuit<S, bn256::Fr> {
 
 #[cfg(test)]
 mod tests {
-    fn write_struct_to_file<T: Serialize>(data: &T, file_path: &str) -> IoResult<()> {
-        let encoded: Vec<u8> = bincode::serialize(data).expect("Failed to serialize");
-        let mut file = File::create(file_path)?;
-        file.write_all(&encoded)?;
-        Ok(())
-    }
-
-    fn read_struct_from_file<T: for<'de> Deserialize<'de>>(file_path: &str) -> IoResult<T> {
-        let mut file = File::open(file_path)?;
-        let mut buffer = Vec::new();
-        file.read_to_end(&mut buffer)?;
-
-        // Deserialization can use the buffer's data, no lifetime issue
-        let decoded: T = bincode::deserialize(&buffer)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-
-        Ok(decoded)
-    }
-    use std::{fs, io::Cursor};
+    use std::fs;
 
     use crate::{
-        aggregation_circuit::AggregationConfigPinning, gadget::crypto::ShaFlexGateManager,
-        util::Halo2ConfigPinning, witness::CommitteeUpdateArgs,
+        aggregation_circuit::AggregationConfigPinning, util::Halo2ConfigPinning,
+        witness::CommitteeUpdateArgs,
     };
 
     use super::*;
-    use bn256::G1Affine;
+    use ark_std::{end_timer, start_timer};
     use eth_types::Testnet;
-    use ff::Field;
     use halo2_base::{
-        gates::circuit::{builder::BaseCircuitBuilder, BaseCircuitParams},
         halo2_proofs::{
+            dev::MockProver,
             halo2curves::bn256::Fr,
-            plonk::{create_proof, keygen_vk, verify_proof, Circuit, ProvingKey, VerifyingKey},
-            poly::{
-                commitment::Params,
-                kzg::{
-                    commitment::{KZGCommitmentScheme, ParamsKZG},
-                    multiopen::{ProverSHPLONK, VerifierSHPLONK},
-                    strategy::SingleStrategy,
-                },
-                VerificationStrategy,
-            },
-            transcript::{
-                Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer,
-                TranscriptWriterBuffer,
-            },
+            plonk::ProvingKey,
+            poly::{commitment::Params, kzg::commitment::ParamsKZG},
         },
         utils::fs::gen_srs,
     };
-    use rand::rngs::OsRng;
     use snark_verifier_sdk::evm::{evm_verify, gen_evm_proof_shplonk};
     use snark_verifier_sdk::{halo2::aggregation::AggregationCircuit, CircuitExt, Snark};
 
@@ -343,113 +311,25 @@ mod tests {
     }
 
     #[test]
-    fn test_prove_and_verify_plonk() {
+    fn test_committee_update_circuit() {
         const K: u32 = 20;
-        let mut file = File::open("./params/kzg_bn254_20.srs").expect("Failed to open params!");
-
-        let mut buffer = Vec::new();
-
-        file.read_to_end(&mut buffer)
-            .expect("Failed to read params!");
-
-        let params: ParamsKZG<Bn256> =
-            ParamsKZG::read(&mut Cursor::new(&buffer)).expect("Failed to read buffer :(");
-
-        const PINNING_PATH: &str = "./config/committee_update_20.json";
-        const PKEY_PATH: &str = "../build/committee_update_20.pkey";
-
-        let pk = CommitteeUpdateCircuit::<Testnet, Fr>::create_pk(
-            &params,
-            PKEY_PATH,
-            PINNING_PATH,
-            &CommitteeUpdateArgs::<Testnet>::default(),
-            None,
-        );
-
-        println!("[Ok] Proving Key");
-
         let witness = load_circuit_args();
+        let params: ParamsKZG<Bn256> = gen_srs(K);
 
         let circuit = CommitteeUpdateCircuit::<Testnet, Fr>::create_circuit(
-            CircuitBuilderStage::Prover,
-            Some(Eth2ConfigPinning::from_path(PINNING_PATH)),
+            CircuitBuilderStage::Mock,
+            None,
             &witness,
             &params,
         )
-        .expect("Failed to construct circuit");
+        .unwrap();
 
-        println!("[Ok] Construct Circuit");
+        let instance = CommitteeUpdateCircuit::<Testnet, Fr>::get_instances(&witness, LIMB_BITS);
 
-        let reader: Vec<u8> = vec![];
-        let mut transcript_writer: Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>> =
-            Blake2bWrite::init(reader);
-        println!("[Ok] Read Transcript");
-
-        let vk: &VerifyingKey<G1Affine> = pk.get_vk();
-
-        let circuit_params = circuit.params();
-        //let vk_serialized = vk.to_bytes(halo2_base::halo2_proofs::SerdeFormat::RawBytes);
-
-        let witness_serialized = bincode::serialize(&witness).unwrap();
-        let witness_deserialized: CommitteeUpdateArgs<Testnet> =
-            bincode::deserialize(&witness_serialized).unwrap();
-
-        /*
-        let instances = circuit.instances();
-        let instances_ref: Vec<&[Fr]> = instances.iter().map(|inner| inner.as_slice()).collect();
-        let instances_nested_ref: Vec<&[&[Fr]]> = instances_ref
-            .iter()
-            .map(|inner| std::slice::from_ref(inner))
-            .collect();
-
-        create_proof::<
-            KZGCommitmentScheme<Bn256>,
-            ProverSHPLONK<Bn256>,
-            Challenge255<G1Affine>,
-            OsRng,
-            Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
-            _,
-        >(
-            &params,
-            &pk,
-            &[circuit],
-            &instances_nested_ref,
-            OsRng,
-            &mut transcript_writer,
-        )
-        .expect("Failed to generate proof!");
-
-        let reader_final = transcript_writer.finalize();
-
-        println!("[Ok] Proof");
-
-        let mut transcript_reader = Blake2bRead::init(&reader_final[..]);
-
-        write_struct_to_file(&reader_final, "proof.txt").expect("Failed to write proof");
-        write_struct_to_file(&instances, "instances.txt").expect("Failed to write instances");
-        write_struct_to_file(
-            &vk.to_bytes(halo2_base::halo2_proofs::SerdeFormat::RawBytes),
-            "vk.txt",
-        )
-        .expect("Failed to write vk");
-
-        verify_proof::<
-            _,
-            VerifierSHPLONK<Bn256>,
-            Challenge255<G1Affine>,
-            Blake2bRead<_, G1Affine, Challenge255<G1Affine>>,
-            SingleStrategy<Bn256>,
-        >(
-            &params,
-            &vk,
-            SingleStrategy::new(&params),
-            &instances_nested_ref,
-            &mut transcript_reader,
-        )
-        .expect("Failed to verify!");
-
-        println!("[Yippie]");
-        */
+        let timer = start_timer!(|| "committee_update mock prover");
+        let prover = MockProver::<Fr>::run(K, &circuit, instance).unwrap();
+        prover.assert_satisfied();
+        end_timer!(timer);
     }
 
     #[test]
